@@ -31,13 +31,13 @@ extern fn interrupt(_:u32) {
 static mut stop_loop : Option<AtomicBool> = None;
 
 fn handle_pipe(name : &String) {
-	let mut a = NamedPipe::new(name);
+	let mut a = try!(NamedPipe::new(name));
 
     let t = thread::spawn(move || {
 	    let mut f = File::create(name);
     });
 
-    let cp = CompletionPort::new(1);
+    let cp = try!(CompletionPort::new(1));
     cp.add_handle(3, &a);
     a.connect();     
     let mut b : String = String::new();
