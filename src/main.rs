@@ -33,6 +33,7 @@ static mut stop_loop : Option<AtomicBool> = None;
 
 fn handle_pipe(name : &String) -> Result<(), Error> {
 	let mut a = try!(NamedPipe::new(name));
+    info!("pipe created");
     let name2 = name.clone();
     let t = thread::spawn(move || {
 	    let mut f = File::create(name2);
@@ -41,13 +42,27 @@ fn handle_pipe(name : &String) -> Result<(), Error> {
     let cp = try!(CompletionPort::new(1));
     cp.add_handle(3, &a);
     a.connect();     
-    let mut b : String = String::new();
+    let mut data = Vec::with_capacity(1024);
 	let mut over = Overlapped::zero();
+
+    let result = unsafe {
+        data.set_len(1024);
+        a.read_overlapped(&mut data, &mut over)
+    };
+
+// check `result` to see if an error happened
+
+// wait for the I/O to complete
+    let notification = cp.get(None).unwrap();
+    
     unsafe {
-    	a.read_overlapped(&mut b.as_ref(), &mut over);
+        data.set_len(notification.bytes_transferred() as usize); // update how many bytes were read
     }
-    let status = cp.get(None);       
-    info!("{:?}", b);
+
+    let string = String::from_utf8(data).unwrap(); // parse utf-8 to a string
+
+// work with string      
+    info!("{:?}", string);
 
 	t.join();
     Ok(())
