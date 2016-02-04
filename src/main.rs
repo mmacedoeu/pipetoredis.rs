@@ -3,6 +3,7 @@ extern crate redis;
 #[macro_use] extern crate log;
 extern crate env_logger;
 extern crate miow;
+#[macro_use] extern crate throw;
 
 use std::thread;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,37 +32,43 @@ extern fn interrupt(_:u32) {
 
 static mut stop_loop : Option<AtomicBool> = None;
 
-fn handle_pipe(name : &String) -> Result<(), Error> {
-	let mut a = try!(NamedPipe::new(name));
-    info!("pipe created");
+fn handle_pipe(name : &String) -> Result<(), throw::Error<Error>> {
+	let mut a = throw!(NamedPipe::new(name));
+    debug!("pipe new");
     let name2 = name.clone();
     let t = thread::spawn(move || {
 	    let mut f = File::create(name2);
+        debug!("pipe created");
     });
 
-    let cp = try!(CompletionPort::new(1));
+    let cp = throw!(CompletionPort::new(1));
+    debug!("CompletionPort new");
     cp.add_handle(3, &a);
-    a.connect();     
-    let mut data = Vec::with_capacity(1024);
+    a.connect();
+    debug!("connect");
+    let mut data = Vec::with_capacity(4096);
 	let mut over = Overlapped::zero();
 
+    debug!("Overlapped");
     let result = unsafe {
-        data.set_len(1024);
+        data.set_len(4096);
+        debug!("read_overlapped");
         a.read_overlapped(&mut data, &mut over)
     };
 
 // check `result` to see if an error happened
+    throw!(result);
 
 // wait for the I/O to complete
     let notification = cp.get(None).unwrap();
-    
+    info!("notification");
     unsafe {
         data.set_len(notification.bytes_transferred() as usize); // update how many bytes were read
     }
 
     let string = String::from_utf8(data).unwrap(); // parse utf-8 to a string
 
-// work with string      
+// work with string
     info!("{:?}", string);
 
 	t.join();
@@ -93,9 +100,15 @@ fn main() {
     let pipe_name = name(param1, param2);
     info!("Pipename: {:?}", &pipe_name);
 
+    let mut result = Ok(());
     unsafe {
     	stop_loop = Some(AtomicBool::new(false));
       	signal(2, interrupt);
-    	handle_pipe(&pipe_name).unwrap();      	
+    	result = handle_pipe(&pipe_name);
     }
+    match result {
+        Err(e) => error!("{:?}", e),
+        _ => info!("Normal termination !"),
+    }
+
 }
