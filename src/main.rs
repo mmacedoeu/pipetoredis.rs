@@ -35,43 +35,50 @@ static mut stop_loop : Option<AtomicBool> = None;
 fn handle_pipe(name : &String) -> Result<(), throw::Error<Error>> {
 	let mut a = throw!(NamedPipe::new(name));
     debug!("pipe new");
-    let name2 = name.clone();
-    let t = thread::spawn(move || {
-	    let mut f = File::create(name2);
-        debug!("pipe created");
-    });
 
     let cp = throw!(CompletionPort::new(1));
-    debug!("CompletionPort new");
+    info!("CompletionPort new");
     cp.add_handle(3, &a);
     a.connect();
-    debug!("connect");
-    let mut data = Vec::with_capacity(4096);
+    info!("connect");
 	let mut over = Overlapped::zero();
 
-    debug!("Overlapped");
-    let result = unsafe {
-        data.set_len(4096);
-        debug!("read_overlapped");
-        a.read_overlapped(&mut data, &mut over)
-    };
+    loop {
+        let mut data = Vec::with_capacity(4096);
 
-// check `result` to see if an error happened
-    throw!(result);
+        debug!("Overlapped");
+        let result = unsafe {
+            data.set_len(4096);
+            debug!("read_overlapped");
+            a.read_overlapped(&mut data, &mut over)
+        };
 
-// wait for the I/O to complete
-    let notification = cp.get(None).unwrap();
-    info!("notification");
-    unsafe {
-        data.set_len(notification.bytes_transferred() as usize); // update how many bytes were read
+    // check `result` to see if an error happened
+        throw!(result);
+
+    // wait for the I/O to complete
+        let notification = cp.get(None).unwrap();
+        info!("notification");
+        unsafe {
+            data.set_len(notification.bytes_transferred() as usize); // update how many bytes were read
+        }
+
+        let string = String::from_utf8(data).unwrap(); // parse utf-8 to a string
+
+    // work with string
+        info!("{:?}", string);
+
+        unsafe {
+            match stop_loop {
+                Some(ref z) => if z.load(Ordering::Relaxed) {break},
+                None => {},
+            }                
+        }
+        
+
     }
 
-    let string = String::from_utf8(data).unwrap(); // parse utf-8 to a string
 
-// work with string
-    info!("{:?}", string);
-
-	t.join();
     Ok(())
 }
 
